@@ -49,7 +49,7 @@ function renderMapThemeDropdown(container: HTMLElement, provider: MapProvider): 
   const select = container.querySelector<HTMLSelectElement>('#us-map-theme');
   if (!select) return;
   const currentTheme = getMapTheme(provider);
-  select.innerHTML = MAP_THEME_OPTIONS[provider]
+  select.innerHTML = (MAP_THEME_OPTIONS[provider] ?? [])
     .map(opt => `<option value="${opt.value}"${opt.value === currentTheme ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`)
     .join('');
 }
@@ -147,7 +147,7 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
     </div>
   </div>`;
   html += `<select class="unified-settings-select" id="us-map-theme">`;
-  for (const opt of MAP_THEME_OPTIONS[currentProvider]) {
+  for (const opt of (MAP_THEME_OPTIONS[currentProvider] ?? [])) {
     const selected = opt.value === currentMapTheme ? ' selected' : '';
     html += `<option value="${opt.value}"${selected}>${escapeHtml(opt.label)}</option>`;
   }

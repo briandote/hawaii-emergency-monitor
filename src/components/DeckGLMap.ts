@@ -7,7 +7,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox';
 import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
 import { GeoJsonLayer, ScatterplotLayer, PathLayer, IconLayer, TextLayer, PolygonLayer } from '@deck.gl/layers';
 import maplibregl from 'maplibre-gl';
-import { registerPMTilesProtocol, FALLBACK_DARK_STYLE, FALLBACK_LIGHT_STYLE, getMapProvider, getMapTheme, getStyleForProvider, isLightMapTheme } from '@/config/basemap';
+import { getDarkStyle, isLightMapTheme, FALLBACK_DARK_STYLE, FALLBACK_LIGHT_STYLE } from '@/config/basemap';
 import Supercluster from 'supercluster';
 import type {
   MapLayers,
@@ -170,10 +170,8 @@ const VIEW_PRESETS: Record<DeckMapView, { longitude: number; latitude: number; z
 const MAP_INTERACTION_MODE: MapInteractionMode =
   import.meta.env.VITE_MAP_INTERACTION_MODE === 'flat' ? 'flat' : '3d';
 
-const HAPPY_DARK_STYLE = '/map-styles/happy-dark.json';
-const HAPPY_LIGHT_STYLE = '/map-styles/happy-light.json';
-const isHappyVariant = SITE_VARIANT === 'happy';
-const isEmergencyVariant = SITE_VARIANT === 'emergency';
+const isHappyVariant = false;
+const isEmergencyVariant = true;
 
 // Zoom thresholds for layer visibility and labels (matches old Map.ts)
 // Zoom-dependent layer visibility and labels
@@ -453,7 +451,6 @@ export class DeckGLMap {
   private webglLost = false;
   private usedFallbackStyle = false;
   private styleLoadTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private tileMonitorGeneration = 0;
 
 
   private layerCache: Map<string, Layer> = new Map();
@@ -519,15 +516,7 @@ export class DeckGLMap {
     this.popup = new MapPopup(container);
 
     this.handleThemeChange = () => {
-      if (isHappyVariant) {
-        this.switchBasemap();
-        return;
-      }
-      const provider = getMapProvider();
-      const mapTheme = getMapTheme(provider);
-      const paintTheme = isLightMapTheme(mapTheme) ? 'light' as const : 'dark' as const;
-      this.updateCountryLayerPaint(paintTheme);
-      this.render();
+      this.switchBasemap();
     };
     window.addEventListener('theme-changed', this.handleThemeChange);
 
@@ -717,23 +706,9 @@ export class DeckGLMap {
       );
     }
 
-    const initialProvider = isHappyVariant ? 'openfreemap' as const : isEmergencyVariant ? 'carto' as const : getMapProvider();
-    if (initialProvider === 'pmtiles' || initialProvider === 'auto') registerPMTilesProtocol();
-
-    const preset = isEmergencyVariant
-      ? { longitude: -157.86, latitude: 21.31, zoom: 8 }
-      : VIEW_PRESETS[this.state.view];
-    const initialMapTheme = getMapTheme(initialProvider);
-    const primaryStyle = isHappyVariant
-      ? (getCurrentTheme() === 'light' ? HAPPY_LIGHT_STYLE : HAPPY_DARK_STYLE)
-      : isEmergencyVariant
-        ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-        : getStyleForProvider(initialProvider, initialMapTheme);
-    if (!isHappyVariant && typeof primaryStyle === 'string' && !primaryStyle.includes('pmtiles')) {
-      this.usedFallbackStyle = true;
-      const attr = this.container.querySelector('.map-attribution');
-      if (attr) attr.innerHTML = '© <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
-    }
+    const preset = { longitude: -157.86, latitude: 21.31, zoom: 8 };
+    const primaryStyle = getDarkStyle();
+    const initialMapTheme = 'dark-matter';
 
     const basemapEl = document.getElementById('deckgl-basemap');
     if (!basemapEl) return;
@@ -746,7 +721,8 @@ export class DeckGLMap {
       renderWorldCopies: false,
       attributionControl: false,
       interactive: true,
-      ...(isEmergencyVariant ? { minZoom: 6, maxZoom: 16 } : {}),
+      minZoom: 6,
+      maxZoom: 16,
       ...(MAP_INTERACTION_MODE === 'flat'
         ? {
           maxPitch: 0,
@@ -775,7 +751,8 @@ export class DeckGLMap {
         renderWorldCopies: false,
         attributionControl: false,
         interactive: true,
-        ...(isEmergencyVariant ? { minZoom: 6, maxZoom: 16 } : {}),
+        minZoom: 6,
+      maxZoom: 16,
         ...(MAP_INTERACTION_MODE === 'flat'
           ? {
             maxPitch: 0,
@@ -5993,9 +5970,7 @@ export class DeckGLMap {
         });
 
         if (!this.countryHoverSetup) this.setupCountryHover();
-        const paintProvider = getMapProvider();
-        const paintMapTheme = getMapTheme(paintProvider);
-        this.updateCountryLayerPaint(isLightMapTheme(paintMapTheme) ? 'light' : 'dark');
+        this.updateCountryLayerPaint('dark');
         if (this.highlightedCountryCode) this.highlightCountry(this.highlightedCountryCode);
         this.render();
       })
@@ -6053,8 +6028,7 @@ export class DeckGLMap {
   private countryPulseRaf: number | null = null;
 
   private getHighlightRestOpacity(): { fill: number; border: number } {
-    const theme = isLightMapTheme(getMapTheme(getMapProvider())) ? 'light' : 'dark';
-    return { fill: theme === 'light' ? 0.18 : 0.12, border: 0.5 };
+    return { fill: 0.12, border: 0.5 };
   }
 
   public highlightCountry(code: string): void {
@@ -6115,15 +6089,7 @@ export class DeckGLMap {
 
   private switchBasemap(): void {
     if (!this.maplibreMap) return;
-    const provider = isEmergencyVariant ? 'carto' as const : getMapProvider();
-    const mapTheme = isEmergencyVariant ? 'dark-matter' : getMapTheme(provider);
-    const style = isHappyVariant
-      ? (getCurrentTheme() === 'light' ? HAPPY_LIGHT_STYLE : HAPPY_DARK_STYLE)
-      : isEmergencyVariant
-        ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-        : (this.usedFallbackStyle && provider === 'auto')
-          ? (isLightMapTheme(mapTheme) ? FALLBACK_LIGHT_STYLE : FALLBACK_DARK_STYLE)
-          : getStyleForProvider(provider, mapTheme);
+    const style = getDarkStyle();
     if (this.countryPulseRaf) { cancelAnimationFrame(this.countryPulseRaf); this.countryPulseRaf = null; }
     this.countryGeoJsonLoaded = false;
     this.maplibreMap.setStyle(style, { diff: false });
@@ -6131,82 +6097,13 @@ export class DeckGLMap {
       localizeMapLabels(this.maplibreMap);
       this.loadCountryBoundaries();
       if (this.radarActive) this.applyRadarLayer();
-      const paintTheme = isLightMapTheme(mapTheme) ? 'light' as const : 'dark' as const;
-      this.updateCountryLayerPaint(paintTheme);
-      this.render();
-    });
-    if (!isHappyVariant && provider !== 'openfreemap' && !this.usedFallbackStyle) {
-      this.monitorTileLoading(mapTheme);
-    }
-  }
-
-  private monitorTileLoading(mapTheme: string): void {
-    if (!this.maplibreMap) return;
-    const gen = ++this.tileMonitorGeneration;
-    let ok = false;
-    let errCount = 0;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const map = this.maplibreMap;
-
-    const cleanup = () => {
-      map.off('error', onError);
-      map.off('data', onData);
-      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-    };
-
-    const onError = (e: { error?: Error; message?: string }) => {
-      if (gen !== this.tileMonitorGeneration) { cleanup(); return; }
-      const msg = e.error?.message ?? e.message ?? '';
-      if (msg.includes('Failed to fetch') || msg.includes('AJAXError') || msg.includes('CORS') || msg.includes('NetworkError') || msg.includes('403') || msg.includes('Forbidden')) {
-        errCount++;
-        if (!ok && errCount >= 2) {
-          cleanup();
-          this.switchToFallbackStyle(mapTheme);
-        }
-      }
-    };
-
-    const onData = (e: { dataType?: string }) => {
-      if (gen !== this.tileMonitorGeneration) { cleanup(); return; }
-      if (e.dataType === 'source') { ok = true; cleanup(); }
-    };
-
-    map.on('error', onError);
-    map.on('data', onData);
-
-    timeoutId = setTimeout(() => {
-      timeoutId = null;
-      if (gen !== this.tileMonitorGeneration) return;
-      cleanup();
-      if (!ok) this.switchToFallbackStyle(mapTheme);
-    }, 10000);
-  }
-
-  private switchToFallbackStyle(mapTheme: string): void {
-    if (this.usedFallbackStyle || !this.maplibreMap) return;
-    this.usedFallbackStyle = true;
-    const fallback = isEmergencyVariant
-      ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
-      : isLightMapTheme(mapTheme) ? FALLBACK_LIGHT_STYLE : FALLBACK_DARK_STYLE;
-    console.warn(`[DeckGLMap] Basemap tiles failed, falling back to OpenFreeMap: ${fallback}`);
-    if (this.countryPulseRaf) { cancelAnimationFrame(this.countryPulseRaf); this.countryPulseRaf = null; }
-    this.countryGeoJsonLoaded = false;
-    this.maplibreMap.setStyle(fallback, { diff: false });
-    this.maplibreMap.once('style.load', () => {
-      localizeMapLabels(this.maplibreMap);
-      this.loadCountryBoundaries();
-      if (this.radarActive) this.applyRadarLayer();
-      const paintTheme = isLightMapTheme(mapTheme) ? 'light' as const : 'dark' as const;
-      this.updateCountryLayerPaint(paintTheme);
+      this.updateCountryLayerPaint('dark');
       this.render();
     });
   }
 
   public reloadBasemap(): void {
     if (!this.maplibreMap) return;
-    const provider = isEmergencyVariant ? 'carto' as const : getMapProvider();
-    if (provider === 'pmtiles' || provider === 'auto') registerPMTilesProtocol();
-    this.usedFallbackStyle = false;
     this.switchBasemap();
   }
 
