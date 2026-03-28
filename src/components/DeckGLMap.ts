@@ -7,7 +7,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox';
 import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
 import { GeoJsonLayer, ScatterplotLayer, PathLayer, IconLayer, TextLayer, PolygonLayer } from '@deck.gl/layers';
 import maplibregl from 'maplibre-gl';
-import { getDarkStyle, isLightMapTheme, FALLBACK_DARK_STYLE, FALLBACK_LIGHT_STYLE } from '@/config/basemap';
+import { getDarkStyle } from '@/config/basemap';
 import Supercluster from 'supercluster';
 import type {
   MapLayers,
@@ -449,7 +449,6 @@ export class DeckGLMap {
   private renderPaused = false;
   private renderPending = false;
   private webglLost = false;
-  private usedFallbackStyle = false;
   private styleLoadTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 
@@ -708,7 +707,6 @@ export class DeckGLMap {
 
     const preset = { longitude: -157.86, latitude: 21.31, zoom: 8 };
     const primaryStyle = getDarkStyle();
-    const initialMapTheme = 'dark-matter';
 
     const basemapEl = document.getElementById('deckgl-basemap');
     if (!basemapEl) return;
@@ -733,72 +731,10 @@ export class DeckGLMap {
         : {}),
     });
 
-    const recreateWithFallback = () => {
-      if (this.usedFallbackStyle) return;
-      this.usedFallbackStyle = true;
-      const fallback = isLightMapTheme(initialMapTheme) ? FALLBACK_LIGHT_STYLE : FALLBACK_DARK_STYLE;
-      console.warn(`[DeckGLMap] Primary basemap failed, recreating with fallback: ${fallback}`);
-      const attr = this.container.querySelector('.map-attribution');
-      if (attr) attr.innerHTML = '© <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
-      this.maplibreMap?.remove();
-      const fallbackEl = document.getElementById('deckgl-basemap');
-      if (!fallbackEl) return;
-      this.maplibreMap = new maplibregl.Map({
-        container: fallbackEl,
-        style: fallback,
-        center: [preset.longitude, preset.latitude],
-        zoom: preset.zoom,
-        renderWorldCopies: false,
-        attributionControl: false,
-        interactive: true,
-        minZoom: 6,
-      maxZoom: 16,
-        ...(MAP_INTERACTION_MODE === 'flat'
-          ? {
-            maxPitch: 0,
-            pitchWithRotate: false,
-            dragRotate: false,
-            touchPitch: false,
-          }
-          : {}),
-      });
-      this.maplibreMap.on('load', () => {
-        localizeMapLabels(this.maplibreMap);
-        this.initDeck();
-        this.loadCountryBoundaries();
-        this.fetchServerBases();
-        this.render();
-      });
-    };
-
-    let tileLoadOk = false;
-    let tileErrorCount = 0;
-
     this.maplibreMap.on('error', (e: { error?: Error; message?: string }) => {
       const msg = e.error?.message ?? e.message ?? '';
       console.warn('[DeckGLMap] map error:', msg);
-      if (msg.includes('Failed to fetch') || msg.includes('AJAXError') || msg.includes('CORS') || msg.includes('NetworkError') || msg.includes('403') || msg.includes('Forbidden')) {
-        tileErrorCount++;
-        if (!tileLoadOk && tileErrorCount >= 2) {
-          recreateWithFallback();
-        }
-      }
     });
-
-    this.maplibreMap.on('data', (e: { dataType?: string }) => {
-      if (e.dataType === 'source') {
-        tileLoadOk = true;
-        if (this.styleLoadTimeoutId) {
-          clearTimeout(this.styleLoadTimeoutId);
-          this.styleLoadTimeoutId = null;
-        }
-      }
-    });
-
-    this.styleLoadTimeoutId = setTimeout(() => {
-      this.styleLoadTimeoutId = null;
-      if (!tileLoadOk) recreateWithFallback();
-    }, 10000);
 
     const canvas = this.maplibreMap.getCanvas();
     canvas.addEventListener('webglcontextlost', (e) => {
